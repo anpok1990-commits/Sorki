@@ -10,6 +10,10 @@ const RECONNECT_GRACE_MS = 60_000;     // столько ждём вернувш
 const WAIT_ROOM_TTL_MS = 30 * 60_000;  // пустой стол с приглашением живёт полчаса
 const TIMERS = { mode: 30_000, rps: 20_000, aim: 45_000 };
 
+// В логах — только короткий обезличенный номер игрока, без имён
+const who = (pid) => '#' + String(pid).slice(-4);
+const log = (...a) => console.log('[room]', ...a);
+
 export class Rooms {
   /**
    * @param RAPIER   инициализированный Rapier
@@ -104,6 +108,7 @@ export class Rooms {
     const room = { id: this.newRoomId(), seats: [{ pid, name: player.name, online: true, grace: null }],
       core: null, matchId: null, random, createdAt: Date.now() };
     this.rooms.set(room.id, room);
+    log(room.id, random ? 'создан (случайный соперник)' : 'создан (по приглашению)', who(pid));
     session.roomId = room.id;
     this.sendTo(session.conn, this.lobbyMsg(room, pid));
     return room;
@@ -126,12 +131,14 @@ export class Rooms {
     if (session.roomId === roomId && room) return this.rejoin(room, pid);
     this.leaveIfWaiting(pid);
     if (session.roomId) return this.sendTo(session.conn, { t: 'error', msg: 'Вы уже за другим столом' });
+    if (!room) log(roomId, 'не найден при входе', who(pid));
     if (!room) return this.sendTo(session.conn, { t: 'error', msg: 'Стол не найден — возможно, партия уже закончилась', code: 'no_room' });
     if (room.seats.length >= 2) return this.sendTo(session.conn, { t: 'error', msg: 'За этим столом уже двое', code: 'full' });
     const player = this.store.getPlayer(pid);
     room.seats.push({ pid, name: player.name, online: true, grace: null });
     session.roomId = room.id;
     if (this.queue === room.id) this.queue = null;
+    log(room.id, 'сел второй игрок', who(pid), '— партия началась');
     this.startMatch(room);
   }
 
@@ -201,6 +208,7 @@ export class Rooms {
   closeRoom(room, reason, byPid = null) {
     if (!this.rooms.has(room.id)) return;
     this.rooms.delete(room.id);
+    log(room.id, 'закрыт:', reason, byPid ? who(byPid) : '');
     if (this.queue === room.id) this.queue = null;
     if (room.core) {
       if (room.core.phase !== 'over') room.core.abandon();

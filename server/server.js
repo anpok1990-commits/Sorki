@@ -98,6 +98,7 @@ export async function startServer({ RAPIER, port = 8080, store = new Store(), bo
     rooms.sendTo(ws, { t: 'welcome', me: { id: player.id, name: player.name, chips: player.chips.length,
       ratings: { slam: store.rating(player.id, 'slam'), drop: store.rating(player.id, 'drop') } } });
     const room = typeof msg.room === 'string' && msg.room ? msg.room : who.startParam;
+    console.log('[ws] вход', '#' + player.id.slice(-4), room ? `со ссылкой на стол ${room}` : 'без ссылки');
     rooms.attach(ws, player, room && /^(room_)?[A-Za-z0-9]{4,8}$/.test(room) ? room : null);
   }
 
