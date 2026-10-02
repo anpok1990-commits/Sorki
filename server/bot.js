@@ -12,7 +12,12 @@ export class Bot {
     this.username = null;
     this.offset = 0;
     this.running = false;
+    this.status = 'starting';     // для /health: видно, жив ли бот, без секретов
+    this.lastError = null;
   }
+
+  // в тексте ошибки не должно оказаться токена (он есть в URL запроса)
+  safe(msg) { return String(msg).split(this.token).join('***'); }
 
   async call(method, params = {}) {
     const res = await fetch(`${API}/bot${this.token}/${method}`, {
@@ -41,7 +46,9 @@ export class Bot {
   }
 
   async start() {
-    const me = await this.call('getMe');
+    let me;
+    try { me = await this.call('getMe'); }
+    catch (e) { this.status = 'error'; this.lastError = 'getMe: ' + this.safe(e.message); throw e; }
     this.username = me.username;
     // Удаляем вебхук, если был — иначе getUpdates не работает
     await this.call('deleteWebhook', { drop_pending_updates: false });
@@ -52,6 +59,7 @@ export class Bot {
       { command: 'help', description: 'Как играть' },
     ] }).catch(() => {});
     this.running = true;
+    this.status = 'running';
     console.log(`[bot] @${this.username} запущен`);
     this.loop();
   }
@@ -64,11 +72,12 @@ export class Bot {
         const updates = await this.call('getUpdates', { offset: this.offset, timeout: 30, allowed_updates: ['message'] });
         for (const u of updates) {
           this.offset = u.update_id + 1;
-          await this.onUpdate(u).catch(e => console.warn('[bot] update:', e.message));
+          await this.onUpdate(u).catch(e => { this.lastError = 'update: ' + this.safe(e.message); console.warn('[bot] update:', this.lastError); });
         }
       } catch (e) {
         if (!this.running) break;
-        console.warn('[bot] polling:', e.message);
+        this.lastError = 'polling: ' + this.safe(e.message);
+        console.warn('[bot]', this.lastError);
         await new Promise(r => setTimeout(r, 3000));
       }
     }

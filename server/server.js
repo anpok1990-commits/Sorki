@@ -33,7 +33,9 @@ export async function startServer({ RAPIER, port = 8080, store = new Store(), bo
       let path = decodeURIComponent(url.pathname);
       if (path === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
-        return res.end(JSON.stringify({ ok: true, ...rooms.stats() }));
+        return res.end(JSON.stringify({ ok: true, ...rooms.stats(),
+          bot: bot ? { status: bot.status, username: bot.username, error: bot.lastError } : (botToken ? 'APP_URL не задан' : 'BOT_TOKEN не задан'),
+          appUrl: appUrl || null }));
       }
       if (path === '/') path = '/index.html';
       if (!PUBLIC.some(re => re.test(path))) throw new Error('forbidden');
@@ -109,14 +111,22 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   await RAPIER.init();
   const env = process.env;
   const botToken = env.BOT_TOKEN || '';
-  const appUrl = env.APP_URL || '';
-  const bot = botToken && appUrl ? new Bot(botToken, { appUrl, shortName: env.BOT_APP_SHORTNAME || '' }) : null;
+  // частая ошибка — адрес без https:// или с пробелом: чиним сами
+  let appUrl = (env.APP_URL || '').trim().replace(/\/+$/, '');
+  if (appUrl && !/^https?:\/\//.test(appUrl)) appUrl = 'https://' + appUrl;
+  const botTokenClean = botToken.trim();
+  const bot = botTokenClean && appUrl ? new Bot(botTokenClean, { appUrl, shortName: env.BOT_APP_SHORTNAME || '' }) : null;
   if (botToken && !appUrl) console.warn('[server] APP_URL не задан — бот не запущен');
   const srv = await startServer({
     RAPIER, port: Number(env.PORT || 8080), store: new Store(env.DATA_DIR || './data'),
-    botToken, appUrl, devAuth: env.DEV_AUTH === '1', bot,
+    botToken: botTokenClean, appUrl, devAuth: env.DEV_AUTH === '1', bot,
   });
-  if (bot) bot.start().catch(e => console.error('[bot] не запустился:', e.message));
+  // если Telegram недоступен или токен неверный — пробуем снова каждые 30 с, ошибку видно в /health
+  const startBot = () => bot.start().catch(e => {
+    console.error('[bot] не запустился:', bot.lastError || bot.safe(e.message));
+    setTimeout(startBot, 30_000);
+  });
+  if (bot) startBot();
   console.log(`Сотки: порт ${srv.port}${env.DEV_AUTH === '1' ? '  (DEV_AUTH: вход без Telegram)' : ''}`);
   const shutdown = () => { srv.close(); srv.store.close(); process.exit(0); };
   process.on('SIGTERM', shutdown);
