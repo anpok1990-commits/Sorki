@@ -35,7 +35,7 @@ export async function startServer({ RAPIER, port = 8080, store = new Store(), bo
         res.writeHead(200, { 'content-type': 'application/json' });
         return res.end(JSON.stringify({ ok: true, ...rooms.stats(),
           bot: bot ? { status: bot.status, username: bot.username, error: bot.lastError } : (botToken ? 'APP_URL не задан' : 'BOT_TOKEN не задан'),
-          appUrl: appUrl || null }));
+          appUrl: appUrl || null, env: ENV_NOTES }));
       }
       if (path === '/') path = '/index.html';
       if (!PUBLIC.some(re => re.test(path))) throw new Error('forbidden');
@@ -105,11 +105,36 @@ export async function startServer({ RAPIER, port = 8080, store = new Store(), bo
   return { httpServer, rooms, store, port: httpServer.address().port, close: () => { httpServer.close(); bot?.stop(); } };
 }
 
+// Имена переменных, набранные в русской раскладке (ВОТ_ТОКЕN), или с пробелом выглядят как нужные,
+// но для Node это другие имена. Находим их сами и пишем в лог, какое имя исправить. Значения не печатаем.
+const LOOKALIKE = { 'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T', 'Х': 'X', 'У': 'Y',
+  'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'х': 'x', 'у': 'y' };
+export const ENV_NOTES = [];
+function readEnv(raw) {
+  const wanted = ['BOT_TOKEN', 'APP_URL', 'BOT_APP_SHORTNAME', 'DATA_DIR', 'PORT', 'DEV_AUTH'];
+  const env = { ...raw };
+  for (const name of wanted) {
+    if (raw[name] !== undefined && raw[name] !== '') continue;
+    const found = Object.keys(raw).find(k => [...k.trim()].map(c => LOOKALIKE[c] || c).join('').toUpperCase() === name);
+    if (found) {
+      env[name] = raw[found];
+      const why = found !== found.trim() ? 'лишний пробел в имени' : 'в имени есть русские буквы';
+      ENV_NOTES.push(`${name}: найдено как «${found}» (${why}) — лучше переименовать`);
+    } else if (raw[name] === '') ENV_NOTES.push(`${name}: переменная есть, но пустая`);
+    else if (name === 'BOT_TOKEN' || name === 'APP_URL') {
+      const similar = Object.keys(raw).filter(k => /tok|url|bot|app|[а-яё]/i.test(k) && !/^RAILWAY_|^npm_|^NODE_/.test(k));
+      ENV_NOTES.push(`${name}: не найдено. Похожие имена: ${similar.length ? similar.map(k => `«${k}»`).join(', ') : 'нет'}`);
+    }
+  }
+  for (const n of ENV_NOTES) console.warn('[env]', n);
+  return env;
+}
+
 // ---- запуск как программы: node server/server.js ----
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { default: RAPIER } = await import('@dimforge/rapier3d-deterministic-compat');
   await RAPIER.init();
-  const env = process.env;
+  const env = readEnv(process.env);
   const botToken = env.BOT_TOKEN || '';
   // частая ошибка — адрес без https:// или с пробелом: чиним сами
   let appUrl = (env.APP_URL || '').trim().replace(/\/+$/, '');
