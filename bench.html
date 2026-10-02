@@ -1,0 +1,317 @@
+<title>Стенд проверки Сотки</title>
+<meta name="description" content="Проверка детерминизма физики, скорости и баланса Соток на разных устройствах">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik+Mono+One&family=Rubik:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Тот же «пластиковый» мир, что и в игре: один тёмный вид для обеих тем */
+  :root {
+    color-scheme: dark;
+    --ink: #f3ede2; --ink-2: #b9b1a4; --ink-3: #7d766c;
+    --bg: #120f0c; --plastic: #19181c; --plastic-2: #242328; --plastic-3: #302e35; --edge: #3b3941;
+    --red: #ff4b3a; --ok: #3fd6a4; --warn: #ffb52e; --bad: #ff5d6c;
+    --display: 'Rubik Mono One', 'Arial Black', system-ui, sans-serif;
+    --body: 'Rubik', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.5; }
+  .wrap { max-width: 920px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 48px; display: grid; gap: 20px; }
+  h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: clamp(20px, 4vw, 28px); text-wrap: balance; }
+  h2 { margin: 0; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  p { margin: 0; color: var(--ink-2); max-width: 68ch; }
+  .lead b { color: var(--ink); font-weight: 600; }
+  .card { background: var(--plastic); border: 1px solid var(--edge); border-radius: 14px; padding: 18px 16px; display: grid; gap: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  label { font-size: 12px; color: var(--ink-3); display: grid; gap: 4px; flex: 1 1 220px; }
+  input[type=text] { font: inherit; color: var(--ink); background: var(--plastic-2); border: 1px solid var(--edge); border-radius: 10px; padding: 9px 12px; width: 100%; }
+  button { font: inherit; cursor: pointer; border-radius: 10px; border: 0; padding: 10px 16px; font-weight: 600; color: #fff; background: var(--red); }
+  button.sec { background: var(--plastic-2); border: 1px solid var(--edge); color: var(--ink); font-weight: 500; }
+  button:disabled { opacity: .5; cursor: progress; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--plastic-3); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--warn), var(--red)); transition: width .15s; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .kv div { background: var(--plastic-2); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+  .kv span { font-size: 11px; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; }
+  .kv b { font-family: var(--mono); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; word-break: break-all; }
+  .tbl { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th { text-align: left; font-weight: 500; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding: 6px 8px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+  td { padding: 8px; border-bottom: 1px solid var(--plastic-3); vertical-align: top; }
+  td.num, th.num { text-align: right; }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .pill.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .pill.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+  .pill.ref { background: var(--plastic-3); color: var(--ink-2); }
+  .ok-t { color: var(--ok); } .warn-t { color: var(--warn); } .bad-t { color: var(--bad); }
+  .muted { color: var(--ink-3); font-size: 12px; }
+  .steps { margin: 0; padding-left: 20px; color: var(--ink-2); display: grid; gap: 4px; }
+  .verdict { font-size: 15px; font-weight: 600; }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:8px">
+    <h1>Стенд проверки · Сотки</h1>
+    <p class="lead">Этап 0. Один и тот же набор из <b>40 бросков</b> должен дать <b>один и тот же хэш</b> на любом телефоне и компьютере — иначе проверка честности в игре не работает. Заодно стенд меряет скорость расчёта и собирает статистику баланса со всех устройств в общую таблицу.</p>
+  </header>
+
+  <section class="card" aria-labelledby="h-this">
+    <h2 id="h-this">Это устройство</h2>
+    <div class="row">
+      <label for="dev-label">Название устройства
+        <input type="text" id="dev-label" maxlength="40" placeholder="Например, мой iPhone 13">
+      </label>
+      <button id="run-det">Проверить (40 бросков)</button>
+    </div>
+    <div class="bar" aria-hidden="true"><i id="det-bar"></i></div>
+    <div id="det-out" class="kv">
+      <div><span>Физика</span><b id="o-ver">—</b></div>
+      <div><span>Хэш набора</span><b id="o-hash">—</b></div>
+      <div><span>Бросок, среднее</span><b id="o-avg">—</b></div>
+      <div><span>Бросок, p95</span><b id="o-p95">—</b></div>
+    </div>
+    <p id="det-verdict" class="verdict muted">Нажмите «Проверить». Займёт 5–30 секунд, телефон лучше не блокировать.</p>
+  </section>
+
+  <section class="card" aria-labelledby="h-devs">
+    <h2 id="h-devs">Все устройства</h2>
+    <ol class="steps">
+      <li>Откройте эту страницу на iPhone, на Android и на компьютере (лучше в разных браузерах).</li>
+      <li>На каждом нажмите «Проверить». Результат появится здесь у всех.</li>
+      <li>Эталон — самый частый хэш. Если устройство с ним не совпало, в таблице видны номера разошедшихся бросков.</li>
+    </ol>
+    <div class="tbl"><table>
+      <thead><tr><th>Устройство</th><th>Браузер</th><th>Физика</th><th>Хэш</th><th>Результат</th><th class="num">Среднее, мс</th><th class="num">p95, мс</th><th>Когда</th></tr></thead>
+      <tbody id="runs-body"><tr><td colspan="8" class="muted">Пока нет проверок.</td></tr></tbody>
+    </table></div>
+    <p class="muted" id="db-note"></p>
+  </section>
+
+  <section class="card" aria-labelledby="h-bal">
+    <h2 id="h-bal">Баланс</h2>
+    <p>Каждое нажатие — 150 новых бросков со случайными сидами. Результаты со всех устройств складываются, поэтому чем больше людей нажмёт, тем точнее цифры. Цель — разница между битами не больше 15%.</p>
+    <div class="row">
+      <button id="run-bal" class="sec">Прогнать 150 бросков</button>
+      <span class="muted" id="bal-status"></span>
+    </div>
+    <div class="bar" aria-hidden="true"><i id="bal-bar"></i></div>
+    <div class="tbl"><table>
+      <thead><tr><th>Удар</th><th class="num">Бросков</th><th class="num">Фишек за бросок</th><th class="num">На ребре</th><th class="num">Фолов</th><th class="num">Расчёт, мс</th></tr></thead>
+      <tbody id="bal-body"><tr><td colspan="6" class="muted">Пока нет данных.</td></tr></tbody>
+    </table></div>
+  </section>
+</div>
+
+<script type="module">
+import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-deterministic-compat@0.19.3/rapier.mjs';
+import { simulateThrow, SIM_VERSION } from './shared/sim.js';
+import { sha256Hex, randomHex } from './shared/fair.js';
+
+const $ = (id) => document.getElementById(id);
+const CHIPS = Array.from({ length: 10 }, (_, i) => 'c' + i);
+const BITS = ['std', 'heavy', 'wide'];
+const BIT_NAME = { std: 'Классика', heavy: 'Свинчатка', wide: 'Блин' };
+
+// ---------- Устройство ----------
+function guessDevice() {
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+    : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? (navigator.maxTouchPoints > 1 ? 'iPad' : 'Mac') : /Linux/.test(ua) ? 'Linux' : 'Другое';
+  const br = /Telegram/i.test(ua) || window.TelegramWebviewProxy ? 'Telegram' : /YaBrowser/.test(ua) ? 'Яндекс' : /Edg\//.test(ua) ? 'Edge'
+    : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /CriOS|Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'Другой';
+  return { os, br, cores: navigator.hardwareConcurrency || null, mem: navigator.deviceMemory || null };
+}
+const DEV = guessDevice();
+try { $('dev-label').value = localStorage.getItem('caps-bench-label') || ''; } catch {}
+$('dev-label').placeholder = `Например, мой ${DEV.os}`;
+
+// ---------- Фиксированный набор для детерминизма ----------
+// Одинаковые входы и сиды на всех устройствах; оба режима и все три биты.
+function suiteInput(i) {
+  return {
+    bitId: BITS[i % 3],
+    input: { mode: i % 4 === 3 ? 'drop' : 'slam', power: 300 + (i * 97) % 700, tilt: (i * 37) % 280, dir: (i * 53) % 360, aim: (i * 113) % 1000 },
+  };
+}
+const SUITE_N = 40;
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const pct = (arr, p) => { const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+
+let rapierReady = null;
+function loadRapier() { return rapierReady ||= RAPIER.init(); }
+
+async function runDeterminism() {
+  const btn = $('run-det'); btn.disabled = true;
+  $('det-verdict').className = 'verdict muted';
+  $('det-verdict').textContent = 'Загружаю физику…';
+  try { localStorage.setItem('caps-bench-label', $('dev-label').value.trim()); } catch {}
+  try {
+    await loadRapier();
+    const hashes = [], ms = [];
+    for (let i = 0; i < SUITE_N; i++) {
+      const { bitId, input } = suiteInput(i);
+      const fairSeed = await sha256Hex('caps-bench-v1:' + i);
+      const t0 = performance.now();
+      const r = await simulateThrow(RAPIER, { chips: CHIPS, bitId, input, fairSeed });
+      ms.push(performance.now() - t0);
+      hashes.push(r.hash.slice(0, 12));
+      $('det-bar').style.width = ((i + 1) / SUITE_N * 100) + '%';
+      $('det-verdict').textContent = `Бросок ${i + 1} из ${SUITE_N}…`;
+      await tick();
+    }
+    const suiteHash = (await sha256Hex(hashes.join(','))).slice(0, 16);
+    const avg = ms.reduce((a, b) => a + b, 0) / ms.length;
+    const run = {
+      label: ($('dev-label').value.trim() || DEV.os).slice(0, 40),
+      os: DEV.os, browser: DEV.br, cores: DEV.cores, mem: DEV.mem,
+      simVersion: SIM_VERSION, suiteHash, hashes,
+      avgMs: Math.round(avg), p95Ms: Math.round(pct(ms, 0.95)), maxMs: Math.round(Math.max(...ms)),
+      createdAt: Date.now(),
+    };
+    showThis(run);
+    if (db) {
+      try { await db.collection('runs').add(run); }
+      catch (e) { $('db-note').textContent = 'Не удалось сохранить результат в общую таблицу: ' + (e.code || e.message); }
+    } else { localRuns.unshift(run); renderRuns(); }
+  } catch (e) {
+    $('det-verdict').className = 'verdict bad-t';
+    $('det-verdict').textContent = 'Проверка не удалась: ' + (e.message || e) + '. Проверьте интернет и обновите страницу.';
+  } finally { btn.disabled = false; }
+}
+
+function speedClass(v) { return v <= 300 ? 'ok-t' : v <= 800 ? 'warn-t' : 'bad-t'; }
+
+let lastRun = null;
+function showThis(run) {
+  lastRun = run;
+  $('o-ver').textContent = run.simVersion;
+  $('o-hash').textContent = run.suiteHash;
+  $('o-avg').innerHTML = `<span class="${speedClass(run.avgMs)}">${run.avgMs} мс</span>`;
+  $('o-p95').innerHTML = `<span class="${speedClass(run.p95Ms)}">${run.p95Ms} мс</span>`;
+  renderVerdict();
+}
+
+// ---------- Общая таблица ----------
+let db = null, runs = [], localRuns = [], balDocs = [];
+
+function referenceFor(list, ver) {
+  const same = list.filter((r) => r.simVersion === ver);
+  const count = {};
+  for (const r of same) count[r.suiteHash] = (count[r.suiteHash] || 0) + 1;
+  const best = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+  if (!best) return null;
+  return { hash: best[0], votes: best[1], total: same.length, run: same.find((r) => r.suiteHash === best[0]) };
+}
+function diffIdx(a, ref) { const out = []; for (let i = 0; i < a.hashes.length; i++) if (a.hashes[i] !== ref.hashes[i]) out.push(i + 1); return out; }
+
+function renderVerdict() {
+  if (!lastRun) return;
+  const all = db ? runs : localRuns;
+  const ref = referenceFor(all, lastRun.simVersion);
+  const el = $('det-verdict');
+  if (!ref || ref.total < 2) { el.className = 'verdict muted'; el.textContent = 'Готово. Запустите проверку на другом устройстве — сравнение появится автоматически.'; return; }
+  if (lastRun.suiteHash === ref.hash) { el.className = 'verdict ok-t'; el.textContent = `Совпадает с эталоном (${ref.votes} из ${ref.total} устройств). Физика на этом устройстве детерминирована.`; }
+  else { el.className = 'verdict bad-t'; el.textContent = `Расходится с эталоном в бросках № ${diffIdx(lastRun, ref.run).join(', ')}. Пришлите мне скрин этой страницы.`; }
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function when(ts) { const d = new Date(ts); return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); }
+
+function renderRuns() {
+  const all = db ? runs : localRuns;
+  const body = $('runs-body');
+  if (!all.length) { body.innerHTML = '<tr><td colspan="8" class="muted">Пока нет проверок.</td></tr>'; return; }
+  const refs = {};
+  body.innerHTML = all.map((r) => {
+    const ref = refs[r.simVersion] ||= referenceFor(all, r.simVersion);
+    let res;
+    if (!ref || ref.total < 2) res = '<span class="pill ref">ждём второе устройство</span>';
+    else if (r.suiteHash === ref.hash) res = '<span class="pill ok">совпадает</span>';
+    else res = `<span class="pill bad">расходится</span><div class="muted">броски № ${diffIdx(r, ref.run).slice(0, 12).join(', ')}</div>`;
+    const hw = [r.cores ? r.cores + ' ядер' : '', r.mem ? r.mem + ' ГБ' : ''].filter(Boolean).join(', ');
+    return `<tr><td>${esc(r.label)}<div class="muted">${esc(r.os)}${hw ? ' · ' + hw : ''}</div></td><td>${esc(r.browser)}</td><td class="mono">${esc(r.simVersion)}</td>
+      <td class="mono">${esc(r.suiteHash)}</td><td>${res}</td><td class="num ${speedClass(r.avgMs)}">${r.avgMs}</td><td class="num ${speedClass(r.p95Ms)}">${r.p95Ms}</td><td class="muted">${when(r.createdAt)}</td></tr>`;
+  }).join('');
+  renderVerdict();
+}
+
+// ---------- Баланс ----------
+const BAL_CONFIGS = [
+  { key: 'edge-std', name: 'Ребром · Классика', bitId: 'std', mode: 'slam', kind: 'edge' },
+  { key: 'edge-heavy', name: 'Ребром · Свинчатка', bitId: 'heavy', mode: 'slam', kind: 'edge' },
+  { key: 'edge-wide', name: 'Ребром · Блин', bitId: 'wide', mode: 'slam', kind: 'edge' },
+  { key: 'flat-std', name: 'Ровно по центру · Классика', bitId: 'std', mode: 'slam', kind: 'flat' },
+  { key: 'drop-flat', name: 'Стопкой, ровно', bitId: 'std', mode: 'drop', kind: 'flat' },
+  { key: 'drop-tilt', name: 'Стопкой, с наклоном', bitId: 'std', mode: 'drop', kind: 'tilt' },
+];
+const PER_CONFIG = 25;
+const rnd = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1)); // входы игрока случайны; честность тут не нужна
+function balInput(c) {
+  if (c.mode === 'slam' && c.kind === 'edge') return { mode: 'slam', power: rnd(700, 1000), tilt: rnd(150, 270), dir: rnd(0, 359), aim: rnd(600, 1000) };
+  if (c.mode === 'slam') return { mode: 'slam', power: rnd(600, 1000), tilt: rnd(0, 40), dir: rnd(0, 359), aim: rnd(0, 150) };
+  if (c.kind === 'flat') return { mode: 'drop', power: rnd(600, 1000), tilt: 0, dir: 0, aim: 0 };
+  return { mode: 'drop', power: rnd(600, 1000), tilt: rnd(120, 240), dir: rnd(0, 359), aim: rnd(0, 1000) };
+}
+
+async function runBalance() {
+  const btn = $('run-bal'); btn.disabled = true;
+  const total = BAL_CONFIGS.length * PER_CONFIG; let done = 0;
+  try {
+    await loadRapier();
+    const agg = {};
+    for (const c of BAL_CONFIGS) {
+      const a = agg[c.key] = { n: 0, won: 0, edge: 0, foul: 0, ms: 0 };
+      for (let i = 0; i < PER_CONFIG; i++) {
+        const t0 = performance.now();
+        const r = await simulateThrow(RAPIER, { chips: CHIPS, bitId: c.bitId, input: balInput(c), fairSeed: randomHex(32) });
+        a.ms += performance.now() - t0;
+        a.n++; a.won += r.won.length; a.edge += r.outcome.filter((o) => o.state === 'edge').length; a.foul += r.foul ? 1 : 0;
+        done++;
+        $('bal-bar').style.width = (done / total * 100) + '%';
+        $('bal-status').textContent = `${done} из ${total}…`;
+        await tick();
+      }
+      a.ms = Math.round(a.ms);
+    }
+    const doc = { simVersion: SIM_VERSION, os: DEV.os, browser: DEV.br, configs: agg, createdAt: Date.now() };
+    if (db) await db.collection('balance').add(doc); else { balDocs.unshift(doc); renderBalance(); }
+    $('bal-status').textContent = 'Готово, добавлено в общую статистику.';
+  } catch (e) {
+    $('bal-status').textContent = 'Не удалось: ' + (e.code || e.message || e);
+  } finally { btn.disabled = false; }
+}
+
+function renderBalance() {
+  const docs = balDocs.filter((d) => d.simVersion === SIM_VERSION);
+  const body = $('bal-body');
+  if (!docs.length) { body.innerHTML = `<tr><td colspan="6" class="muted">Пока нет данных для ${esc(SIM_VERSION)}.</td></tr>`; return; }
+  const sum = {};
+  for (const d of docs) for (const [k, v] of Object.entries(d.configs || {})) {
+    const s = sum[k] ||= { n: 0, won: 0, edge: 0, foul: 0, ms: 0 };
+    s.n += v.n || 0; s.won += v.won || 0; s.edge += v.edge || 0; s.foul += v.foul || 0; s.ms += v.ms || 0;
+  }
+  body.innerHTML = BAL_CONFIGS.map((c) => {
+    const s = sum[c.key]; if (!s || !s.n) return '';
+    return `<tr><td>${esc(c.name)}</td><td class="num">${s.n}</td><td class="num"><b>${(s.won / s.n).toFixed(2)}</b></td><td class="num">${(s.edge / s.n).toFixed(2)}</td><td class="num">${s.foul}</td><td class="num ${speedClass(s.ms / s.n)}">${Math.round(s.ms / s.n)}</td></tr>`;
+  }).join('') + `<tr><td colspan="6" class="muted">Сессий: ${docs.length}. Физика ${esc(SIM_VERSION)}.</td></tr>`;
+}
+
+$('run-det').onclick = runDeterminism;
+$('run-bal').onclick = runBalance;
+$('o-ver').textContent = SIM_VERSION;
+
+// ---------- Подключение общей базы ----------
+(async () => {
+  const d = window.claude?.use ? await window.claude.use('db') : null;
+  if (!d) { $('db-note').textContent = 'Общая таблица недоступна в этом просмотре: результаты видны только здесь.'; return; }
+  db = d;
+  db.collection('runs').orderBy('createdAt', 'desc').limit(300).onSnapshot(
+    (s) => { runs = s.docs.map((x) => x.data()); renderRuns(); },
+    () => { $('db-note').textContent = 'Общая таблица временно недоступна. Обновите страницу.'; });
+  db.collection('balance').orderBy('createdAt', 'desc').limit(1000).onSnapshot(
+    (s) => { balDocs = s.docs.map((x) => x.data()); renderBalance(); },
+    () => {});
+})();
+</script>
