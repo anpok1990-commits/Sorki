@@ -114,13 +114,14 @@ function readEnv(raw) {
   const wanted = ['BOT_TOKEN', 'APP_URL', 'BOT_APP_SHORTNAME', 'DATA_DIR', 'PORT', 'DEV_AUTH'];
   const env = { ...raw };
   for (const name of wanted) {
-    if (raw[name] !== undefined && raw[name] !== '') continue;
-    const found = Object.keys(raw).find(k => [...k.trim()].map(c => LOOKALIKE[c] || c).join('').toUpperCase() === name);
+    if (raw[name] !== undefined && raw[name].trim() !== '') continue;
+    const found = Object.keys(raw).find(k => k !== name && String(raw[k]).trim() !== ''
+      && [...k.trim()].map(c => LOOKALIKE[c] || c).join('').toUpperCase() === name);
     if (found) {
       env[name] = raw[found];
       const why = found !== found.trim() ? 'лишний пробел в имени' : 'в имени есть русские буквы';
       ENV_NOTES.push(`${name}: найдено как «${found}» (${why}) — лучше переименовать`);
-    } else if (raw[name] === '') ENV_NOTES.push(`${name}: переменная есть, но пустая`);
+    } else if (raw[name] !== undefined) ENV_NOTES.push(`${name}: переменная есть, но значение пустое — вставьте значение`);
     else if (name === 'BOT_TOKEN' || name === 'APP_URL') {
       const similar = Object.keys(raw).filter(k => /tok|url|bot|app|[а-яё]/i.test(k) && !/^RAILWAY_|^npm_|^NODE_/.test(k));
       ENV_NOTES.push(`${name}: не найдено. Похожие имена: ${similar.length ? similar.map(k => `«${k}»`).join(', ') : 'нет'}`);
