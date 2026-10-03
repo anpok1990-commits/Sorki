@@ -57,6 +57,15 @@ const ok = (s) => console.log('  ✓', s);
   c.close(); ok('поддельный initData и действия без входа отклоняются');
 }
 
+// 1b. Старая ссылка на закрытый стол: ошибка + лобби (а не пустой экран)
+{
+  const c = new Client('по старой ссылке'); await c.connect();
+  c.send({ t: 'hello', dev: { id: 'old', name: 'Старая ссылка' }, room: 'ZZZZZ' });
+  assert.equal((await c.waitT('error')).code, 'no_room');
+  const l = await c.waitT('lobby'); assert.equal(l.room, null); assert.ok(l.me);
+  c.close(); ok('вход по устаревшей ссылке: сообщение и лобби, экран не пустой');
+}
+
 // 2. Два игрока, приглашение по ссылке
 const A = new Client('Алекс'), B = new Client('Борис');
 await A.connect(); await B.connect();

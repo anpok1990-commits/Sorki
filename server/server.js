@@ -37,6 +37,7 @@ export async function startServer({ RAPIER, port = 8080, store = new Store(), bo
           bot: bot ? { status: bot.status, username: bot.username, error: bot.lastError } : (botToken ? 'APP_URL не задан' : 'BOT_TOKEN не задан'),
           appUrl: appUrl || null, env: ENV_NOTES }));
       }
+      if (path === '/client-log' && req.method === 'POST') return clientLog(req, res);
       if (path === '/') path = '/index.html';
       if (!PUBLIC.some(re => re.test(path))) throw new Error('forbidden');
       const file = normalize(join(ROOT, path));
@@ -57,7 +58,25 @@ export async function startServer({ RAPIER, port = 8080, store = new Store(), bo
     }
   });
 
+  // Ошибки с телефонов игроков → в лог сервера. Ограничены по размеру и частоте.
+  let logWin = { t: 0, n: 0 };
+  function clientLog(req, res) {
+    let body = '';
+    req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy(); });
+    req.on('end', () => {
+      res.writeHead(204); res.end();
+      const now = Date.now();
+      if (now - logWin.t > 60_000) logWin = { t: now, n: 0 };
+      if (++logWin.n > 60) return;
+      try {
+        const m = JSON.parse(body);
+        console.warn('[client]', String(m.kind).slice(0, 40), '|', String(m.stage), '|', String(m.text).slice(0, 1500).replace(/\s+/g, ' '), '|', String(m.ua).slice(0, 160));
+      } catch {}
+    });
+  }
+
   attachWebSocket(httpServer, (ws) => {
+    console.log('[ws] соединение открыто');
     let win = { t: 0, n: 0 };
     ws.on('message', async (raw) => {
       const now = Date.now();

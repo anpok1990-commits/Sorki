@@ -499,8 +499,18 @@ class WsTransport {
   constructor(onMsg) { this.onMsg = onMsg; this.retry = 0; this.room = params.get('room') || TG?.initDataUnsafe?.start_param || null; }
   start() {
     const base = params.get('server') || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
-    this.ws = new WebSocket(base.replace(/\/$/, '') + '/ws');
+    S.stage = 'connect';
+    setStatus(this.retry ? 'Переподключаемся к серверу…' : 'Подключаемся к серверу…');
+    const ws = this.ws = new WebSocket(base.replace(/\/$/, '') + '/ws');
+    // если соединение «повисло» — не ждём вечно
+    clearTimeout(this.openTimer);
+    this.openTimer = setTimeout(() => {
+      if (ws.readyState === 0) { report('ws-timeout', 'WebSocket не открылся за 10 с'); ws.close(); }
+    }, 10_000);
     this.ws.onopen = () => {
+      clearTimeout(this.openTimer);
+      S.stage = 'hello';
+      setStatus('Входим в игру…');
       this.retry = 0;
       const hello = { t: 'hello', room: this.room };
       if (TG?.initData) hello.initData = TG.initData;
@@ -509,8 +519,10 @@ class WsTransport {
       this.ws.send(JSON.stringify(hello));
       if (S.offline) { S.offline = false; setStatus('Связь восстановлена'); }
     };
-    this.ws.onmessage = (e) => this.onMsg(JSON.parse(e.data));
+    this.ws.onmessage = (e) => { if (S.stage === 'hello') S.stage = 'in'; this.onMsg(JSON.parse(e.data)); };
     this.ws.onclose = (e) => {
+      clearTimeout(this.openTimer);
+      if (S.stage === 'connect' || S.stage === 'hello') report('ws-close', `код ${e.code} на этапе ${S.stage}`);
       if (e.code === 4000) { setStatus('Игра открыта в другом окне'); return; }
       S.offline = true;
       const wait = Math.min(10, 2 ** this.retry++);
@@ -529,9 +541,28 @@ function devId() {
   } catch { return Math.random().toString(36).slice(2, 10); }
 }
 
+// Ошибки на телефоне не видны разработчику — отправляем их в логи сервера (без личных данных)
+function report(kind, err) {
+  const text = String(err?.stack || err?.message || err).slice(0, 1500);
+  console.error(kind, err);
+  if (!ONLINE) return;
+  try {
+    const body = JSON.stringify({ kind, text, ua: navigator.userAgent.slice(0, 160), stage: S.stage || null });
+    if (!(navigator.sendBeacon && navigator.sendBeacon('/client-log', body))) fetch('/client-log', { method: 'POST', body, keepalive: true }).catch(() => {});
+  } catch {}
+}
+window.addEventListener('error', (e) => report('error', e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => report('promise', e.reason));
+
 let transport;
 let queue = Promise.resolve();
-function onMsg(m) { queue = queue.then(() => handleMsg(m)).catch((e) => { console.error(e); S.animating = false; render(); }); }
+function onMsg(m) {
+  queue = queue.then(() => handleMsg(m)).catch((e) => {
+    report('msg:' + m.t, e);
+    toast('Ошибка в игре', String(e?.message || e).slice(0, 120));
+    S.animating = false; render();
+  });
+}
 
 async function handleMsg(m) {
   switch (m.t) {

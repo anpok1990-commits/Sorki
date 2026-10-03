@@ -195,9 +195,13 @@ export class Rooms {
     if (session.roomId === roomId && room) return this.rejoin(room, pid);
     this.leaveIfWaiting(pid);
     if (session.roomId) return this.sendTo(session.conn, { t: 'error', msg: 'Вы уже за другим столом' });
-    if (!room) log(roomId, 'не найден при входе', who(pid));
-    if (!room) return this.sendTo(session.conn, { t: 'error', msg: 'Стол не найден — возможно, партия уже закончилась', code: 'no_room' });
-    if (room.seats.length >= 2) return this.sendTo(session.conn, { t: 'error', msg: 'За этим столом уже двое', code: 'full' });
+    // стол по ссылке не найден или занят — сообщаем и обязательно показываем лобби, иначе экран останется пустым
+    const fail = (msg, code) => {
+      this.sendTo(session.conn, { t: 'error', msg, code });
+      if (!session.roomId) this.sendTo(session.conn, this.emptyLobby(pid));
+    };
+    if (!room) { log(roomId, 'не найден при входе', who(pid)); return fail('Стол по этой ссылке уже закрыт — создайте новый', 'no_room'); }
+    if (room.seats.length >= 2) return fail('За этим столом уже двое', 'full');
     const player = this.store.getPlayer(pid);
     room.seats.push({ pid, name: player.name, online: true, grace: null });
     session.roomId = room.id;
