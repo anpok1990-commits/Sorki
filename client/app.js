@@ -539,7 +539,7 @@ async function handleMsg(m) {
     case 'lobby': showLobby(m); break;
     case 'you':
       S.you = m.idx; S.lobby = null;
-      if (m.opponent) S.opponent = { name: m.opponent, online: m.opponentOnline !== false };
+      if (m.opponent) S.opponent = { name: m.opponent, online: m.opponentOnline !== false, training: !!m.training };
       if (S.you !== 'both') hideOverlay();
       break;
     case 'peer':
@@ -575,9 +575,12 @@ function showLobby(m) {
     const el = showOverlay(`<h2>Сотки</h2>
       <p>${me ? `${esc(me.name)}, у вас ${plural(me.chips, 'фишка', 'фишки', 'фишек')}.<br>Рейтинг: на битах <b>${me.ratings.slam}</b> · стопкой <b>${me.ratings.drop}</b>` : ''}</p>
       <button class="big" id="lb-create">Создать стол и позвать друга</button>
-      <button class="big ghost" id="lb-quick">Случайный соперник</button>`);
+      <button class="big ghost" id="lb-quick">Случайный соперник</button>
+      <button class="big ghost" id="lb-train">Тренировка с ботом</button>
+      <p class="small">Тренировка — на тренировочных фишках: ваши фишки и рейтинг не меняются.</p>`);
     el.querySelector('#lb-create').onclick = () => transport.send({ t: 'create' });
     el.querySelector('#lb-quick').onclick = () => transport.send({ t: 'quick' });
+    el.querySelector('#lb-train').onclick = () => transport.send({ t: 'training' });
     setStatus('Выберите, с кем играть');
     return;
   }
@@ -811,7 +814,7 @@ function renderOverlay() {
     const online = S.you !== 'both';
     const el = showOverlay(`<h2>${head}</h2>
       <p>${st.players.map((p, i) => `${esc(p.name)}: ${plural(n[i], 'фишка', 'фишки', 'фишек')}, ценность ${v[i]}`).join('<br>')}</p>${rt}
-      <button class="big" id="again">${online ? 'Реванш' : 'Новая партия'}</button>
+      <button class="big" id="again">${S.opponent?.training ? 'Ещё партию' : online ? 'Реванш' : 'Новая партия'}</button>
       ${online ? '<button class="big ghost" id="leave">Выйти из-за стола</button>' : ''}`);
     el.querySelector('#again').onclick = () => { hideOverlay(); transport.send({ t: 'new' }, 0); };
     el.querySelector('#leave')?.addEventListener('click', () => transport.send({ t: 'leave' }));

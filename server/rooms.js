@@ -3,6 +3,7 @@
 
 import { randomInt } from 'node:crypto';
 import { GameCore } from './core.js';
+import { randomHex, prngFromHex } from '../shared/fair.js';
 import { BITS } from '../shared/content.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // без 0/O и 1/I
@@ -20,7 +21,8 @@ export class Rooms {
    * @param store    Store
    * @param inviteLink (roomId) => string
    */
-  constructor(RAPIER, store, { inviteLink = (id) => id, timers = TIMERS, graceMs = RECONNECT_GRACE_MS } = {}) {
+  constructor(RAPIER, store, { inviteLink = (id) => id, timers = TIMERS, graceMs = RECONNECT_GRACE_MS, botSpeed = 1 } = {}) {
+    this.botSpeed = botSpeed;   // в тестах бот ходит быстрее
     this.R = RAPIER;
     this.store = store;
     this.inviteLink = inviteLink;
@@ -124,6 +126,68 @@ export class Rooms {
     if (room) this.queue = room.id;
   }
 
+  /**
+   * Тренировка с ботом: проверить игру в одиночку.
+   * Фишки тренировочные (выпускаются в памяти), база и рейтинг не трогаются.
+   */
+  training(pid) {
+    this.leaveIfWaiting(pid);
+    const session = this.sessions.get(pid);
+    if (session.roomId) return this.sendTo(session.conn, { t: 'error', msg: 'Вы уже за столом' });
+    const player = this.store.getPlayer(pid);
+    const BOT = 'bot:' + pid;
+    const room = { id: this.newRoomId(), training: true, random: false, createdAt: Date.now(), matchId: null,
+      seats: [{ pid, name: player.name, online: true, grace: null }, { pid: BOT, name: 'Бот-тренер', online: true, grace: null, bot: true }] };
+    this.rooms.set(room.id, room);
+    session.roomId = room.id;
+    log(room.id, 'тренировка с ботом', who(pid));
+    this.toSeat(room, 0, { t: 'you', idx: 0, room: room.id, opponent: 'Бот-тренер', opponentOnline: true, training: true });
+
+    const timers = new Set();
+    const later = (ms, fn) => {
+      const t = setTimeout(() => { timers.delete(t); if (this.rooms.get(room.id) === room) fn(); }, ms * this.botSpeed);
+      t.unref?.(); timers.add(t);
+    };
+    room.stopBot = () => { for (const t of timers) clearTimeout(t); timers.clear(); };
+    const rnd = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
+    let lastTurnSeen = -1;
+    // «Мозг» бота: смотрит на состояние, как живой игрок, и ходит с паузой
+    const brain = (msg) => {
+      if (msg.t !== 'state') return;
+      const st = msg.state, core = room.core;
+      if (st.phase === 'rps' && !st.rpsReady[1]) {
+        later(rnd(700, 1500), () => core.handle(1, { t: 'rps', choice: ['rock', 'scissors', 'paper'][rnd(0, 2)] }));
+      }
+      if (st.phase === 'aim' && st.current === 1 && st.turn !== lastTurnSeen) {
+        lastTurnSeen = st.turn;
+        const turn = st.turn;
+        // ждём, пока у человека доиграет повтор предыдущего броска
+        later(rnd(4500, 6500), () => {
+          if (core.phase !== 'aim' || core.current !== 1 || core.turn !== turn) return;
+          const mode = core.mode;
+          core.handle(1, { t: 'throw', turn, clientSeed: randomHex(16), input: {
+            mode, power: mode === 'slam' ? rnd(450, 950) : rnd(350, 900),
+            tilt: rnd(20, 190), dir: rnd(0, 359), aim: mode === 'slam' ? rnd(350, 900) : rnd(0, 1000),
+          } });
+        });
+      }
+    };
+    room.core = new GameCore(this.R, (to, msg) => {
+      this.toRoom(room, to, msg);
+      if (to === 'all' || to === 1) brain(msg);
+    }, {
+      names: [player.name, 'Бот-тренер'],
+      timers: this.timers,
+      hooks: {
+        canRestart: () => room.seats[0].online,
+        // проигравшему всё — новые тренировочные фишки
+        refill: () => { const rng = prngFromHex(randomHex(16)); return Array.from({ length: 5 }, () => room.core.mintChip(rng)); },
+      },
+    });
+    room.core.players[0].bit = BITS[player.bit] ? player.bit : 'std';
+    room.core.broadcastState();
+  }
+
   join(pid, roomId) {
     const session = this.sessions.get(pid);
     roomId = String(roomId || '').toUpperCase().replace(/^ROOM_/, '').slice(0, 8);
@@ -165,7 +229,7 @@ export class Rooms {
     seat.online = true;
     const conn = this.sessions.get(pid).conn;
     if (!room.core) return this.sendTo(conn, this.lobbyMsg(room, pid));
-    this.sendTo(conn, { t: 'you', idx: i, room: room.id, opponent: room.seats[1 - i]?.name, opponentOnline: !!room.seats[1 - i]?.online });
+    this.sendTo(conn, { t: 'you', idx: i, room: room.id, opponent: room.seats[1 - i]?.name, opponentOnline: !!room.seats[1 - i]?.online, training: !!room.training });
     this.sendTo(conn, { t: 'state', state: room.core.publicState() });
     if (wasAway) this.toSeat(room, 1 - i, { t: 'peer', status: 'back' });
   }
@@ -210,6 +274,7 @@ export class Rooms {
     this.rooms.delete(room.id);
     log(room.id, 'закрыт:', reason, byPid ? who(byPid) : '');
     if (this.queue === room.id) this.queue = null;
+    room.stopBot?.();
     if (room.core) {
       if (room.core.phase !== 'over') room.core.abandon();
       room.core.clearTimer();

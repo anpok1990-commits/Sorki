@@ -23,9 +23,9 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 // что можно отдавать браузеру (серверный код, база и секреты — нельзя)
 const PUBLIC = [/^\/index\.html$/, /^\/client\/[\w.-]+\.js$/, /^\/shared\/[\w.-]+\.js$/, /^\/server\/core\.js$/];
 
-export async function startServer({ RAPIER, port = 8080, store = new Store(), botToken = '', appUrl = '', shortName = '', devAuth = false, bot = null, timers, graceMs } = {}) {
+export async function startServer({ RAPIER, port = 8080, store = new Store(), botToken = '', appUrl = '', shortName = '', devAuth = false, bot = null, timers, graceMs, botSpeed } = {}) {
   if (!botToken && !devAuth) console.warn('[server] BOT_TOKEN не задан и DEV_AUTH выключен — войти в игру будет нельзя');
-  const rooms = new Rooms(RAPIER, store, { inviteLink: (id) => bot?.inviteLink(id) || null, timers, graceMs });
+  const rooms = new Rooms(RAPIER, store, { inviteLink: (id) => bot?.inviteLink(id) || null, timers, graceMs, botSpeed });
 
   const httpServer = http.createServer(async (req, res) => {
     try {
@@ -72,6 +72,7 @@ export async function startServer({ RAPIER, port = 8080, store = new Store(), bo
         switch (msg.t) {
           case 'create': return rooms.create(pid);
           case 'quick': return rooms.quick(pid);
+          case 'training': return rooms.training(pid);
           case 'join': return rooms.join(pid, msg.room);
           case 'leave': return rooms.leave(pid);
           case 'top': return rooms.sendTo(ws, { t: 'top', mode: msg.mode, list: store.top(msg.mode === 'drop' ? 'drop' : 'slam') });

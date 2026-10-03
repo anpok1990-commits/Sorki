@@ -10,7 +10,7 @@ const TOKEN = '1234567:TEST-ONLY-NOT-A-REAL-TOKEN';
 const store = new Store(':memory:');
 const fakeBot = { inviteLink: (id) => `https://t.me/sotki_test_bot/play?startapp=${id}`, stop() {} };
 const srv = await startServer({ RAPIER: MockRapier, port: 0, store, botToken: TOKEN, devAuth: true, bot: fakeBot,
-  timers: { mode: 3000, rps: 3000, aim: 1500 }, graceMs: 300 });
+  timers: { mode: 3000, rps: 3000, aim: 1500 }, graceMs: 300, botSpeed: 0.05 });
 const URL_ = `ws://127.0.0.1:${srv.port}/ws`;
 
 function initData(id, name, extra = {}) {
@@ -35,8 +35,10 @@ class Client {
     const hit = this.log.find(pred);
     if (hit) { this.log.splice(this.log.indexOf(hit), 1); return Promise.resolve(hit); }
     return new Promise((ok, fail) => {
-      const w = { pred, ok: (m) => { clearTimeout(timer); this.log.splice(this.log.indexOf(m), 1); ok(m); } };
-      const timer = setTimeout(() => fail(new Error(`${this.name}: не дождались ${label}`)), ms);
+      const drop = (m) => { const i = this.log.indexOf(m); if (i >= 0) this.log.splice(i, 1); };
+      const w = { pred, ok: (m) => { clearTimeout(timer); drop(m); ok(m); } };
+      // по таймауту ожидание снимаем, иначе «мёртвый» ожидатель съест чужое сообщение
+      const timer = setTimeout(() => { this.waiters = this.waiters.filter(x => x !== w); fail(new Error(`${this.name}: не дождались ${label}`)); }, ms);
       this.waiters.push(w);
     });
   }
@@ -150,6 +152,36 @@ await C.waitT('notice', m => /не вернулся/.test(m.msg), 3000);
 await C.waitT('lobby', m => m.room === null);
 assert.equal(store.chipsOf('dev_v').length, 12); assert.equal(store.chipsOf('dev_g').length, 12);
 ok('случайный подбор работает; соперник пропал — партия отменена, ставки у владельцев');
+
+// 9b. Тренировка с ботом: бот сам играет, база и рейтинг не меняются
+{
+  const before = store.chipsOf('dev_v').map(c => c.uid).join();
+  C.send({ t: 'training' });
+  const you = await C.waitT('you', m => m.training);
+  assert.equal(you.opponent, 'Бот-тренер');
+  await C.waitT('state', m => m.state.phase === 'mode');
+  C.send({ t: 'mode', mode: 'slam' });
+  C.send({ t: 'rps', choice: 'rock' });
+  let botThrows = 0, myThrows = 0;
+  for (let guard = 0; guard < 200 && C.state.phase !== 'over'; guard++) {
+    C.log = C.log.filter(x => x.t !== 'state');   // старые состояния не нужны — смотрим на свежие
+    const st = C.state;
+    if (st.phase === 'rps' && !st.rpsReady[0]) C.send({ t: 'rps', choice: 'paper' });
+    if (st.phase === 'aim' && st.current === 0) {
+      C.send({ t: 'throw', turn: st.turn, input: inp(), clientSeed: 'ef'.repeat(8) });
+      await C.waitT('result', m => m.turn === st.turn && m.player === 0); myThrows++;
+    } else if (st.phase === 'aim' && st.current === 1) {
+      await C.waitT('result', m => m.turn === st.turn && m.player === 1, 3000); botThrows++;
+    }
+    await C.waitT('state', m => m.state.turn > st.turn || m.state.phase !== st.phase || m.state.phase === 'over', 3000).catch(() => {});
+  }
+  assert.equal(C.state.phase, 'over');
+  assert.equal(store.chipsOf('dev_v').map(c => c.uid).join(), before, 'тренировка не должна трогать фишки в базе');
+  assert.ok(!C.log.some(m => m.t === 'ratings'), 'тренировка не должна менять рейтинг');
+  C.send({ t: 'leave' });
+  await C.waitT('lobby', m => m.room === null);
+  ok(`тренировка: партия до конца (ваших бросков ${myThrows}, бота ${botThrows}), фишки в базе и рейтинг не тронуты`);
+}
 
 // 10. Статика: клиент отдаётся, серверный код и база — нет
 const base = `http://127.0.0.1:${srv.port}`;
